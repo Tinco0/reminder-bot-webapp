@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pendência</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #1a1a1a);
+      --muted: var(--tg-theme-hint-color, #707579);
+      --link: var(--tg-theme-link-color, #2481cc);
+      --button-bg: var(--tg-theme-button-color, #2481cc);
+      --button-text: var(--tg-theme-button-text-color, #ffffff);
+      --section-bg: var(--tg-theme-section-bg-color, #f5f5f5);
+      --separator: var(--tg-theme-section-separator-color, #e0e0e0);
+      --accent: var(--tg-theme-accent-text-color, #2481cc);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    h1 { font-size: 20px; margin: 4px 0 12px 0; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 16px 0 6px 0; }
+    section {
+      background: var(--section-bg);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+    }
+    label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    input[type="text"], input[type="datetime-local"], select, textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--separator);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 50px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      padding: 5px 11px;
+      border: 1px solid var(--separator);
+      border-radius: 999px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .chip.selected {
+      background: var(--accent);
+      color: var(--button-text);
+      border-color: var(--accent);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .toggle-row + .toggle-row { border-top: 1px solid var(--separator); padding-top: 8px; margin-top: 8px; }
+    .toggle-row label { margin: 0; flex: 1; }
+    input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
+    .hidden { display: none !important; }
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .error { color: #d33; font-size: 12px; margin-top: 4px; }
+
+    .item-card {
+      background: var(--bg);
+      border: 1px solid var(--separator);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .item-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .item-num {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .item-remove {
+      margin-left: auto;
+      color: #d33;
+      cursor: pointer;
+      font-size: 18px;
+      user-select: none;
+      padding: 0 4px;
+    }
+
+    .add-item-btn {
+      width: 100%;
+      padding: 10px;
+      border: 1px dashed var(--separator);
+      border-radius: 10px;
+      background: transparent;
+      color: var(--accent);
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
+      padding-top: 8px;
+    }
+    button.primary {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: var(--button-bg);
+      color: var(--button-text);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      padding: 12px 18px;
+      border: 1px solid var(--separator);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="heading">Nova pendência</h1>
+
+  <form id="form" novalidate>
+    <!-- Para quem (always shown when contacts exist) -->
+    <section id="section-recipient" class="hidden">
+      <div class="field">
+        <label for="recipient">👤 Para quem</label>
+        <select id="recipient">
+          <option value="">Para mim</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Shared defaults — visible in create mode only -->
+    <div id="shared-block">
+      <h2>Padrões para todos os itens</h2>
+      <section>
+        <div class="field">
+          <label for="shared-deadline">📅 Prazo padrão</label>
+          <input id="shared-deadline" type="datetime-local" />
+          <div class="hint">Cada item pode ter um prazo próprio (mais abaixo).</div>
+        </div>
+        <div class="field">
+          <label for="shared-start-at">⏳ Começar a alertar em</label>
+          <input id="shared-start-at" type="datetime-local" />
+          <div class="hint">Útil para tarefas de amanhã.</div>
+        </div>
+      </section>
+
+      <section>
+        <div class="field">
+          <label>🔁 Frequência</label>
+          <div class="chips" id="freq-chips">
+            <div class="chip" data-value="">Única vez</div>
+            <div class="chip" data-value="15">15 min</div>
+            <div class="chip" data-value="60">1 hora</div>
+            <div class="chip" data-value="240">4 horas</div>
+            <div class="chip" data-value="1440">Diária</div>
+          </div>
+        </div>
+        <div class="field">
+          <label>🔔 Alertas antes do prazo</label>
+          <div class="chips" id="pre-alerts-chips">
+            <div class="chip" data-value="10">10 min</div>
+            <div class="chip" data-value="30">30 min</div>
+            <div class="chip" data-value="60">1 h</div>
+            <div class="chip" data-value="1440">1 dia</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="field">
+          <label>📲 Métodos</label>
+          <div class="chips" id="methods-chips">
+            <div class="chip" data-value="message">Mensagem</div>
+            <div class="chip" data-value="ring">Chamada</div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="schedule">🕐 Quando avisar</label>
+          <select id="schedule">
+            <option value="always">Sempre</option>
+            <option value="weekdays">Dias úteis (Seg-Sex)</option>
+            <option value="weekdays_sat">Dias úteis + sábado</option>
+            <option value="business_hours">Horário comercial (7h-19h)</option>
+          </select>
+        </div>
+      </section>
+
+      <section>
+        <div class="toggle-row">
+          <label for="ignore-quiet">🔕 Ignorar silêncio noturno</label>
+          <input id="ignore-quiet" type="checkbox" />
+        </div>
+        <div class="toggle-row hidden" id="importante-row">
+          <label for="importante">⚠️ Importante (requer comprovante)</label>
+          <input id="importante" type="checkbox" />
+        </div>
+      </section>
+    </div>
+
+    <!-- Items list -->
+    <h2 id="items-heading">Itens</h2>
+    <section id="items-section">
+      <div id="items-list"></div>
+      <button type="button" id="add-item-btn" class="add-item-btn">+ Adicionar item</button>
+    </section>
+
+    <!-- Description: only shown in edit mode (single-item) -->
+    <section id="description-section" class="hidden">
+      <div class="field">
+        <label for="description">Descrição</label>
+        <textarea id="description" placeholder="Detalhes (opcional)"></textarea>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button type="button" class="secondary" id="cancel-btn">Cancelar</button>
+      <button type="submit" class="primary" id="submit-btn">Criar</button>
+    </div>
+  </form>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    // ---- State from URL fragment ----------------------------------------
+    function parseFragment() {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return {};
+      try {
+        const params = new URLSearchParams(hash);
+        const data = params.get("data");
+        if (!data) return {};
+        return JSON.parse(atob(data.replace(/-/g, "+").replace(/_/g, "/")));
+      } catch (e) {
+        console.error("Failed to parse state", e);
+        return {};
+      }
+    }
+    const state = parseFragment();
+    const isEdit = state.mode === "edit";
+
+    if (isEdit) {
+      document.getElementById("heading").textContent = "Editar pendência";
+      document.getElementById("submit-btn").textContent = "Salvar";
+      document.getElementById("items-heading").textContent = "Item";
+      document.getElementById("description-section").classList.remove("hidden");
+      document.getElementById("add-item-btn").classList.add("hidden");
+      // Edit mode: hide shared "padrões" — single item carries its own fields
+      document.getElementById("shared-block").classList.add("hidden");
+    }
+
+    // ---- Recipient ------------------------------------------------------
+    const recipientSelect = document.getElementById("recipient");
+    (state.contacts || []).forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c.phone;
+      opt.textContent = `@${c.nickname} — ${c.display || c.phone}`;
+      recipientSelect.appendChild(opt);
+    });
+    if ((state.contacts || []).length > 0 || state.preselect_recipient_phone) {
+      document.getElementById("section-recipient").classList.remove("hidden");
+    }
+    if (state.preselect_recipient_phone) {
+      recipientSelect.value = state.preselect_recipient_phone;
+    }
+
+    // Edit mode pre-fills
+    if (isEdit) {
+      if (state.description) document.getElementById("description").value = state.description;
+    }
+
+    // ---- Shared defaults pre-fill (rare; only in edit converted views) --
+    function setIfPresent(elId, val) {
+      if (val == null) return;
+      const el = document.getElementById(elId);
+      if (el) el.value = val;
+    }
+    setIfPresent("schedule", state.alert_schedule);
+    if (state.ignore_quiet_hours) document.getElementById("ignore-quiet").checked = true;
+    if (state.importante) document.getElementById("importante").checked = true;
+
+    // Chips selectors with multi/single + initial values.
+    function initChips(containerId, multi, initialValues) {
+      const container = document.getElementById(containerId);
+      const chips = container.querySelectorAll(".chip");
+      chips.forEach((chip) => {
+        const val = chip.dataset.value;
+        if (initialValues.includes(val)) chip.classList.add("selected");
+        chip.addEventListener("click", () => {
+          if (multi) {
+            chip.classList.toggle("selected");
+          } else {
+            chips.forEach((c) => c.classList.remove("selected"));
+            chip.classList.add("selected");
+          }
+        });
+      });
+    }
+    function selectedChips(containerId) {
+      return Array.from(document.querySelectorAll(`#${containerId} .chip.selected`))
+        .map((c) => c.dataset.value);
+    }
+
+    initChips("freq-chips", false, [String(state.frequency_minutes ?? "")]);
+    initChips("methods-chips", true, state.methods || (isEdit ? [] : ["message"]));
+    initChips("pre-alerts-chips", true, (state.pre_alerts || []).map(String));
+
+    if (state.deadline_at) setIfPresent("shared-deadline", isoToLocalInput(state.deadline_at));
+    if (state.start_alerting_at) setIfPresent("shared-start-at", isoToLocalInput(state.start_alerting_at));
+
+    // Importante toggle visibility tied to recipient choice
+    function refreshImportanteVisibility() {
+      const row = document.getElementById("importante-row");
+      if (recipientSelect.value) row.classList.remove("hidden");
+      else { row.classList.add("hidden"); document.getElementById("importante").checked = false; }
+    }
+    recipientSelect.addEventListener("change", refreshImportanteVisibility);
+    refreshImportanteVisibility();
+
+    // ---- Items list (batch) ---------------------------------------------
+    const itemsList = document.getElementById("items-list");
+    let itemCounter = 0;
+
+    function makeItemCard(initialTitle = "", initialDeadline = "") {
+      itemCounter += 1;
+      const idx = itemCounter;
+      const card = document.createElement("div");
+      card.className = "item-card";
+      card.innerHTML = `
+        <div class="item-card-header">
+          <span class="item-num" data-num>#${idx}</span>
+          <span class="item-remove" data-remove>${isEdit ? "" : "✕"}</span>
+        </div>
+        <div class="field">
+          <label>📝 Título *</label>
+          <input type="text" class="item-title" placeholder="Ex: Pagar luz" />
+        </div>
+        <div class="field item-deadline-field${isEdit ? "" : ""}">
+          <label>📅 Prazo${isEdit ? "" : " (sobrescreve o padrão)"}</label>
+          <input type="datetime-local" class="item-deadline" />
+        </div>
+      `;
+      const titleInput = card.querySelector(".item-title");
+      const deadlineInput = card.querySelector(".item-deadline");
+      titleInput.value = initialTitle;
+      deadlineInput.value = initialDeadline;
+      if (!isEdit) {
+        card.querySelector("[data-remove]").addEventListener("click", () => {
+          if (itemsList.children.length > 1) {
+            card.remove();
+            renumber();
+          }
+        });
+      } else {
+        card.querySelector("[data-remove]").style.display = "none";
+      }
+      itemsList.appendChild(card);
+      return card;
+    }
+    function renumber() {
+      itemsList.querySelectorAll("[data-num]").forEach((el, i) => {
+        el.textContent = `#${i + 1}`;
+      });
+    }
+
+    // Seed initial items
+    if (isEdit) {
+      // Edit mode: one card pre-filled
+      makeItemCard(state.title || "", state.deadline_at ? isoToLocalInput(state.deadline_at) : "");
+    } else {
+      // Create mode: at least one empty card
+      makeItemCard();
+    }
+
+    document.getElementById("add-item-btn").addEventListener("click", () => {
+      makeItemCard();
+      renumber();
+    });
+
+    // ---- Submit ---------------------------------------------------------
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const itemCards = Array.from(itemsList.children);
+      const items = [];
+      for (const card of itemCards) {
+        const title = card.querySelector(".item-title").value.trim();
+        if (!title) continue; // skip empty rows silently
+        const deadlineLocal = card.querySelector(".item-deadline").value;
+        const itemObj = { title };
+        if (deadlineLocal) itemObj.deadline_at = localInputToIso(deadlineLocal);
+        items.push(itemObj);
+      }
+      if (items.length === 0) {
+        alert("Adicione pelo menos um item com título.");
+        return;
+      }
+
+      const freqStr = selectedChips("freq-chips")[0] ?? "";
+      const shared = {
+        recipient_phone: recipientSelect.value || null,
+        deadline_at: localInputToIso(document.getElementById("shared-deadline").value) || null,
+        start_alerting_at: localInputToIso(document.getElementById("shared-start-at").value) || null,
+        frequency_minutes: freqStr === "" ? null : parseInt(freqStr, 10),
+        methods: selectedChips("methods-chips"),
+        pre_alerts: selectedChips("pre-alerts-chips").map((v) => parseInt(v, 10)),
+        alert_schedule: document.getElementById("schedule").value,
+        ignore_quiet_hours: document.getElementById("ignore-quiet").checked,
+        importante: document.getElementById("importante").checked,
+      };
+
+      let payload;
+      if (isEdit) {
+        // Edit mode → single-item: merge shared fields directly into the item
+        const it = items[0];
+        payload = {
+          mode: "edit",
+          item_id: state.item_id ?? null,
+          title: it.title,
+          deadline_at: it.deadline_at ?? null,
+          description: document.getElementById("description").value.trim() || null,
+          recipient_phone: shared.recipient_phone,
+          frequency_minutes: shared.frequency_minutes,
+          methods: shared.methods,
+          pre_alerts: shared.pre_alerts,
+          start_alerting_at: shared.start_alerting_at,
+          alert_schedule: shared.alert_schedule,
+          ignore_quiet_hours: shared.ignore_quiet_hours,
+          importante: shared.importante,
+        };
+      } else {
+        payload = { mode: "create_batch", shared, items };
+      }
+
+      if (tg) {
+        tg.sendData(JSON.stringify(payload));
+        tg.close();
+      } else {
+        alert("Preview (não está no Telegram):\n" + JSON.stringify(payload, null, 2));
+      }
+    });
+
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      if (tg) tg.close();
+    });
+
+    // ---- Helpers --------------------------------------------------------
+    function isoToLocalInput(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    function localInputToIso(s) {
+      if (!s) return null;
+      const d = new Date(s);
+      return d.toISOString();
+    }
+  </script>
+</body>
+</html>
