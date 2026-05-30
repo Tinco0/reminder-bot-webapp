@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pendência</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/pt.js"></script>
   <style>
     :root {
       color-scheme: light dark;
@@ -176,11 +179,11 @@
   <template id="field-template">
     <div class="field" data-field="deadline">
       <label>Prazo</label>
-      <input type="datetime-local" data-bind="deadline_at" />
+      <input type="text" data-bind="deadline_at" data-flatpickr placeholder="Selecione data e hora" />
     </div>
     <div class="field" data-field="start_at">
       <label>Começar a alertar em</label>
-      <input type="datetime-local" data-bind="start_alerting_at" />
+      <input type="text" data-bind="start_alerting_at" data-flatpickr placeholder="Selecione data e hora" />
     </div>
     <div class="field" data-field="frequency">
       <label>Frequência (intervalo de repetição)</label>
@@ -296,13 +299,26 @@
         container.querySelector('[data-field="description"]').classList.remove("hidden");
       }
 
+      // Initialize flatpickr on opted-in inputs first so we can call setDate.
+      container.querySelectorAll("[data-flatpickr]").forEach((el) => {
+        const fp = flatpickr(el, {
+          enableTime: true,
+          time_24hr: true,
+          minuteIncrement: 5,
+          dateFormat: "Y-m-d H:i",
+          locale: typeof flatpickr !== "undefined" && flatpickr.l10ns?.pt ? "pt" : undefined,
+          allowInput: true,
+        });
+        el._fp = fp;
+      });
+
       // Direct-bound inputs
       container.querySelectorAll("[data-bind]").forEach((el) => {
         const key = el.dataset.bind;
         const val = initial[key];
         if (val == null) return;
         if (el.type === "checkbox") el.checked = !!val;
-        else if (el.type === "datetime-local") el.value = isoToLocalInput(val);
+        else if (el._fp) el._fp.setDate(new Date(val), true);
         else el.value = val;
       });
 
@@ -385,8 +401,9 @@
       container.querySelectorAll("[data-bind]").forEach((el) => {
         const key = el.dataset.bind;
         if (el.type === "checkbox") data[key] = el.checked;
-        else if (el.type === "datetime-local") {
-          data[key] = el.value ? localInputToIso(el.value) : null;
+        else if (el._fp) {
+          const sel = el._fp.selectedDates[0];
+          data[key] = sel ? sel.toISOString() : null;
         } else if (el.type === "time") {
           data[key] = el.value || "00:00";
         } else {
