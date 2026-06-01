@@ -172,7 +172,12 @@
 
     <div class="actions">
       <button type="button" class="secondary" id="cancel-btn">Cancelar</button>
+      <button type="button" class="secondary" id="copy-btn">📋 Copiar</button>
       <button type="submit" class="primary" id="submit-btn">Criar</button>
+    </div>
+    <div id="copy-output-wrap" class="hidden">
+      <p class="muted">Copie o texto abaixo e cole no chat (caso o botão acima não funcione):</p>
+      <textarea id="copy-output" readonly rows="4"></textarea>
     </div>
   </form>
 
@@ -501,7 +506,7 @@
     });
 
     // ---- Submit ----
-    function doSubmit() {
+    function buildPayload() {
       const cards = Array.from(itemsList.children);
       const items = [];
       for (const card of cards) {
@@ -513,29 +518,51 @@
       }
       if (items.length === 0) {
         alert("Adicione pelo menos um item com título.");
-        return;
+        return null;
       }
       const shared = isEdit ? {} : readBundle(sharedSection);
       shared.recipient_phone = recipientSelect.value || null;
-
-      let payload;
       if (isEdit) {
-        payload = {
+        return {
           mode: "edit",
           item_id: state.item_id ?? null,
           recipient_phone: shared.recipient_phone,
           ...items[0],
         };
-      } else {
-        payload = { mode: "create_batch", shared, items };
       }
+      return { mode: "create_batch", shared, items };
+    }
 
+    function doSubmit() {
+      const payload = buildPayload();
+      if (!payload) return;
       if (tg) {
         tg.sendData(JSON.stringify(payload));
         tg.close();
       } else {
         alert("Preview:\n" + JSON.stringify(payload, null, 2));
       }
+    }
+
+    function doCopy() {
+      const payload = buildPayload();
+      if (!payload) return;
+      const cmd = "/importar " + JSON.stringify(payload);
+      const out = document.getElementById("copy-output");
+      out.value = cmd;
+      document.getElementById("copy-output-wrap").classList.remove("hidden");
+      // Try clipboard API; fallback is the visible textarea the user can long-press.
+      let copied = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd).then(
+          () => { copied = true; },
+          () => {},
+        );
+      }
+      out.focus();
+      out.select();
+      try { document.execCommand("copy"); copied = true; } catch (e) {}
+      if (copied && tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
     }
 
     document.getElementById("form").addEventListener("submit", (e) => {
@@ -550,6 +577,7 @@
     document.getElementById("cancel-btn").addEventListener("click", () => {
       if (tg) tg.close();
     });
+    document.getElementById("copy-btn").addEventListener("click", doCopy);
 
     // Telegram's native MainButton — always-reliable submit, sits at the bottom
     // of the Mini App and is unaffected by HTML/WebView form quirks.
