@@ -501,8 +501,7 @@
     });
 
     // ---- Submit ----
-    document.getElementById("form").addEventListener("submit", (e) => {
-      e.preventDefault();
+    function doSubmit() {
       const cards = Array.from(itemsList.children);
       const items = [];
       for (const card of cards) {
@@ -537,11 +536,28 @@
       } else {
         alert("Preview:\n" + JSON.stringify(payload, null, 2));
       }
+    }
+
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      doSubmit();
+    });
+    document.getElementById("submit-btn").addEventListener("click", (e) => {
+      e.preventDefault();
+      doSubmit();
     });
 
     document.getElementById("cancel-btn").addEventListener("click", () => {
       if (tg) tg.close();
     });
+
+    // Telegram's native MainButton — always-reliable submit, sits at the bottom
+    // of the Mini App and is unaffected by HTML/WebView form quirks.
+    if (tg && tg.MainButton) {
+      tg.MainButton.setText(isEdit ? "Salvar" : "Criar");
+      tg.MainButton.show();
+      tg.MainButton.onClick(doSubmit);
+    }
 
     function isoToLocalInput(iso) {
       if (!iso) return "";
