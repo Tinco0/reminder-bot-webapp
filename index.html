@@ -383,21 +383,54 @@
       });
     }
 
-    function initSingleChips(container, initial) {
-      const chips = container.querySelectorAll(".chip");
-      chips.forEach((chip) => {
-        if (chip.dataset.value === initial) chip.classList.add("selected");
-        chip.addEventListener("click", () => {
-          chips.forEach((c) => c.classList.remove("selected"));
-          chip.classList.add("selected");
-        });
+    function _wireSingleChip(chip, container) {
+      chip.addEventListener("click", () => {
+        container.querySelectorAll(".chip").forEach((c) => c.classList.remove("selected"));
+        chip.classList.add("selected");
       });
     }
+    function _wireMultiChip(chip) {
+      chip.addEventListener("click", () => chip.classList.toggle("selected"));
+    }
+    function _ensureChip(container, value, label) {
+      let chip = container.querySelector(`.chip[data-value="${CSS.escape(value)}"]`);
+      if (chip) return chip;
+      chip = document.createElement("div");
+      chip.className = "chip";
+      chip.dataset.value = value;
+      chip.textContent = label;
+      const inputEl = container.querySelector(".chip-input");
+      if (inputEl) container.insertBefore(chip, inputEl);
+      else container.appendChild(chip);
+      return chip;
+    }
+    function _supportsCustom(container) {
+      return !!container.querySelector(".chip-input");
+    }
+    function initSingleChips(container, initial) {
+      container.querySelectorAll(".chip").forEach((chip) => _wireSingleChip(chip, container));
+      if (initial === "" || initial == null) {
+        const empty = container.querySelector('.chip[data-value=""]');
+        if (empty) empty.classList.add("selected");
+        return;
+      }
+      let chip = container.querySelector(`.chip[data-value="${CSS.escape(String(initial))}"]`);
+      if (!chip && _supportsCustom(container)) {
+        chip = _ensureChip(container, String(initial), `${initial}min`);
+        _wireSingleChip(chip, container);
+      }
+      if (chip) chip.classList.add("selected");
+    }
     function initMultiChips(container, initialValues) {
-      const chips = container.querySelectorAll(".chip");
-      chips.forEach((chip) => {
-        if (initialValues.includes(chip.dataset.value)) chip.classList.add("selected");
-        chip.addEventListener("click", () => chip.classList.toggle("selected"));
+      container.querySelectorAll(".chip").forEach((chip) => _wireMultiChip(chip));
+      const custom = _supportsCustom(container);
+      initialValues.forEach((v) => {
+        let chip = container.querySelector(`.chip[data-value="${CSS.escape(String(v))}"]`);
+        if (!chip && custom) {
+          chip = _ensureChip(container, String(v), `${v}min`);
+          _wireMultiChip(chip);
+        }
+        if (chip) chip.classList.add("selected");
       });
     }
 
@@ -533,31 +566,120 @@
       return { mode: "create_batch", shared, items };
     }
 
+    // Strip fields that would resolve to the same value via shared/platform default,
+    // so the payload fits Telegram's 4096-byte sendData limit.
+    const PLATFORM_DEFAULTS = {
+      description: "", deadline_at: null, start_alerting_at: null,
+      frequency_minutes: null, methods: ["message"], pre_alerts: [],
+      allowed_days: [0, 1, 2, 3, 4, 5, 6],
+      allowed_time_start: "00:00", allowed_time_end: "00:00",
+      ignore_quiet_hours: false, importante: false,
+    };
+    function deepEq(a, b) {
+      if (a === b) return true;
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        return a.every((v, i) => deepEq(v, b[i]));
+      }
+      return false;
+    }
+    function effective(key, shared) {
+      return (key in shared && shared[key] != null) ? shared[key] : PLATFORM_DEFAULTS[key];
+    }
+    function compactShared(shared) {
+      const out = {};
+      for (const [k, v] of Object.entries(shared)) {
+        if (k === "recipient_phone") { if (v) out[k] = v; continue; }
+        if (k in PLATFORM_DEFAULTS && deepEq(v, PLATFORM_DEFAULTS[k])) continue;
+        out[k] = v;
+      }
+      return out;
+    }
+    function compactItem(item, shared) {
+      const out = { title: item.title };
+      for (const [k, v] of Object.entries(item)) {
+        if (k === "title") continue;
+        if (k in PLATFORM_DEFAULTS && deepEq(v, effective(k, shared))) continue;
+        out[k] = v;
+      }
+      return out;
+    }
+    function compactPayload(payload) {
+      if (payload.mode !== "create_batch") return payload;
+      const shared = payload.shared || {};
+      return {
+        mode: "create_batch",
+        shared: compactShared(shared),
+        items: (payload.items || []).map((it) => compactItem(it, shared)),
+      };
+    }
+
     function doSubmit() {
       const payload = buildPayload();
       if (!payload) return;
+      const out = compactPayload(payload);
       if (tg) {
-        tg.sendData(JSON.stringify(payload));
+        tg.sendData(JSON.stringify(out));
         tg.close();
       } else {
-        alert("Preview:\n" + JSON.stringify(payload, null, 2));
+        alert("Preview:\n" + JSON.stringify(out, null, 2));
       }
+    }
+
+    // -------- Copy as /adicionar batch command --------
+    function shEscape(s) {
+      if (s == null) return "";
+      const str = String(s);
+      if (str === "") return "''";
+      if (!/[\s"'\\$`]/.test(str)) return str;
+      return "'" + str.replace(/'/g, "'\\''") + "'";
+    }
+    function methodCli(m) { return m === "ring" ? "chamada" : "mensagem"; }
+    function flagsFor(obj, sharedRef) {
+      // sharedRef === null means we're emitting shared itself; treat as platform defaults
+      const parts = [];
+      const shared = sharedRef || {};
+      function emit(key, build) {
+        if (!(key in obj)) return;
+        const v = obj[key];
+        const eff = sharedRef ? effective(key, shared) : PLATFORM_DEFAULTS[key];
+        if (deepEq(v, eff)) return;
+        const tokens = build(v);
+        if (tokens) parts.push(...tokens);
+      }
+      emit("deadline_at",       (v) => v ? ["-p", shEscape(v)] : null);
+      emit("start_alerting_at", (v) => v ? ["-S", shEscape(v)] : null);
+      emit("frequency_minutes", (v) => v == null ? ["-f", "unica"] : ["-f", String(v)]);
+      emit("methods",           (v) => Array.isArray(v) && v.length ? ["-m", v.map(methodCli).join(",")] : null);
+      emit("importante",        (v) => v ? ["-i"] : null);
+      emit("ignore_quiet_hours",(v) => v ? ["-q"] : null);
+      return parts;
+    }
+    function buildAdicionarText(payload) {
+      if (payload.mode !== "create_batch") return null;
+      const shared = payload.shared || {};
+      const sharedFlags = ["/adicionar"];
+      if (shared.recipient_phone) sharedFlags.push("-d", shEscape(shared.recipient_phone));
+      sharedFlags.push(...flagsFor(shared, null));
+      const lines = [sharedFlags.join(" ")];
+      for (const item of (payload.items || [])) {
+        const parts = ["-t", shEscape(item.title || "")];
+        parts.push(...flagsFor(item, shared));
+        lines.push(parts.join(" "));
+      }
+      return lines.join("\n");
     }
 
     function doCopy() {
       const payload = buildPayload();
       if (!payload) return;
-      const cmd = "/importar " + JSON.stringify(payload);
+      const cmd = buildAdicionarText(payload) || JSON.stringify(payload);
       const out = document.getElementById("copy-output");
       out.value = cmd;
       document.getElementById("copy-output-wrap").classList.remove("hidden");
-      // Try clipboard API; fallback is the visible textarea the user can long-press.
       let copied = false;
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(cmd).then(
-          () => { copied = true; },
-          () => {},
-        );
+        navigator.clipboard.writeText(cmd).then(() => { copied = true; }, () => {});
       }
       out.focus();
       out.select();
