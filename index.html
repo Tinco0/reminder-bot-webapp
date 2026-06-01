@@ -579,14 +579,6 @@
     });
     document.getElementById("copy-btn").addEventListener("click", doCopy);
 
-    // Telegram's native MainButton — always-reliable submit, sits at the bottom
-    // of the Mini App and is unaffected by HTML/WebView form quirks.
-    if (tg && tg.MainButton) {
-      tg.MainButton.setText(isEdit ? "Salvar" : "Criar");
-      tg.MainButton.show();
-      tg.MainButton.onClick(doSubmit);
-    }
-
     function isoToLocalInput(iso) {
       if (!iso) return "";
       const d = new Date(iso);
