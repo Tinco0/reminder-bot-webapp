@@ -294,6 +294,11 @@
       document.getElementById("section-recipient").classList.remove("hidden");
     }
     if (state.preselect_recipient_phone) recipientSelect.value = state.preselect_recipient_phone;
+    if (isEdit) {
+      // Recipient can't change on edit — the backend ignores it. Disable the
+      // select so the user doesn't expect a behavior that won't happen.
+      recipientSelect.disabled = true;
+    }
 
     // ---- Field bundle: cloned into shared section + each item card ----
     function buildFieldBundle(container, initial, opts = {}) {
