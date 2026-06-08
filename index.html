@@ -195,6 +195,7 @@
       <div class="chips" data-chips="frequency">
         <div class="chip" data-value="">Única</div>
         <div class="chip" data-value="15">15min</div>
+        <div class="chip" data-value="30">30min</div>
         <div class="chip" data-value="60">1h</div>
         <div class="chip" data-value="240">4h</div>
         <div class="chip" data-value="1440">Diária</div>
@@ -269,7 +270,13 @@
         const params = new URLSearchParams(hash);
         const data = params.get("data");
         if (!data) return {};
-        return JSON.parse(atob(data.replace(/-/g, "+").replace(/_/g, "/")));
+        // Backend encodes UTF-8 → base64url. atob returns a Latin-1 binary string,
+        // so we have to widen back to bytes and re-decode as UTF-8 to recover
+        // accents and ç correctly.
+        const binary = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return JSON.parse(new TextDecoder("utf-8").decode(bytes));
       } catch (e) { console.error(e); return {}; }
     }
     const state = parseFragment();
@@ -468,12 +475,15 @@
     // ---- Shared defaults section ----
     const sharedSection = document.getElementById("shared-section");
     if (!isEdit) {
+      const ud = state.user_defaults || {};
       buildFieldBundle(sharedSection, {
-        frequency_minutes: null,
-        methods: ["message"],
-        allowed_days: [0, 1, 2, 3, 4, 5, 6],
-        allowed_time_start: "00:00",
-        allowed_time_end: "00:00",
+        frequency_minutes: "frequency_minutes" in ud ? ud.frequency_minutes : null,
+        methods: ud.methods || ["message"],
+        pre_alerts: ud.pre_alerts || [],
+        allowed_days: ud.allowed_days || [0, 1, 2, 3, 4, 5, 6],
+        allowed_time_start: ud.allowed_time_start || "00:00",
+        allowed_time_end: ud.allowed_time_end || "00:00",
+        ignore_quiet_hours: !!ud.ignore_quiet_hours,
       });
     }
     function snapshotShared() {
@@ -489,6 +499,10 @@
       const idx = itemCounter;
       const card = document.createElement("div");
       card.className = "item-card";
+      // While true, this card just inherits shared defaults at submit time.
+      // Flipped to false the first time the user opens Personalizar, so any
+      // customization sticks even if shared changes afterwards.
+      card._followsShared = !isEdit;
 
       const header = document.createElement("div");
       header.className = "item-card-header";
@@ -509,12 +523,21 @@
 
       const init = initial || (isEdit ? state : snapshotShared());
       buildFieldBundle(details, init, { showDescription: isEdit });
+      card._buildInit = init;
 
       titleWrap.querySelector("[data-item-title]").value =
         (initial && initial.title) || (isEdit && state.title) || "";
 
       if (!isEdit) {
         header.querySelector(".expand-toggle").addEventListener("click", () => {
+          // Re-snapshot shared the first time, so the user sees current
+          // shared values (not stale ones from when the card was created).
+          if (card._followsShared) {
+            card._followsShared = false;
+            const fresh = snapshotShared();
+            details.innerHTML = "";
+            buildFieldBundle(details, fresh, { showDescription: false });
+          }
           details.classList.toggle("hidden");
         });
         header.querySelector("[data-remove]").addEventListener("click", () => {
@@ -550,6 +573,12 @@
       for (const card of cards) {
         const title = card.querySelector("[data-item-title]").value.trim();
         if (!title) continue;
+        // Untouched cards (Personalizar never opened) inherit every shared
+        // default. Emit only the title so the backend's `pick()` falls back.
+        if (card._followsShared) {
+          items.push({ title });
+          continue;
+        }
         const data = readBundle(card.querySelector(".item-details"));
         data.title = title;
         items.push(data);
